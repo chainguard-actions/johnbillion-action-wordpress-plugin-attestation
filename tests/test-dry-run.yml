@@ -1,0 +1,64 @@
+name: Test dry-run mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Create a fixture zip file that will serve as both the "deployed" zip
+      # (fetched from the plugin directory) and the "generated" zip (zip-path input).
+      # We serve it via a local HTTP server so the action can fetch it via curl.
+      - name: Create fixture plugin zip
+        run: |
+          mkdir -p /tmp/plugin-fixture/my-test-plugin
+          echo "<?php // Plugin Name: My Test Plugin" > /tmp/plugin-fixture/my-test-plugin/my-test-plugin.php
+          cd /tmp/plugin-fixture
+          zip -r /tmp/my-test-plugin.zip my-test-plugin/
+          echo "Created zip at /tmp/my-test-plugin.zip"
+          ls -la /tmp/my-test-plugin.zip
+
+      # Start a simple HTTP server to serve the zip file
+      - name: Start local HTTP server
+        run: |
+          cd /tmp
+          python3 -m http.server 8765 &
+          echo "HTTP_SERVER_PID=$!" >> $GITHUB_ENV
+          # Wait for server to be ready
+          sleep 2
+          # Verify server is running
+          curl --silent --output /dev/null --write-out "%{http_code}" http://localhost:8765/my-test-plugin.zip
+
+      - id: action
+        uses: .
+        with:
+          zip-path: /tmp/my-test-plugin.zip
+          plugin: my-test-plugin
+          version: "1.0.0"
+          zip-url: "http://localhost:8765/my-test-plugin.zip"
+          dry-run: "true"
+          timeout: 1
+
+      - name: Assert zip-url output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.zip-url }}
+        run: |
+          echo "actual zip-url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected zip-url output to be non-empty"
+            exit 1
+          fi
+          if [ "$ACTUAL" != "http://localhost:8765/my-test-plugin.zip" ]; then
+            echo "FAIL: expected zip-url to be 'http://localhost:8765/my-test-plugin.zip', got '$ACTUAL'"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Stop HTTP server
+        if: always()
+        run: |
+          if [ -n "$HTTP_SERVER_PID" ]; then
+            kill "$HTTP_SERVER_PID" || true
+          fi

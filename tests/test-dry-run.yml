@@ -1,0 +1,38 @@
+name: Test dry-run mode with zip-path
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download plugin ZIP from WordPress.org
+        run: |
+          curl --silent --output hello-dolly.zip \
+            "https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip"
+          echo "Downloaded hello-dolly.zip"
+          ls -lh hello-dolly.zip
+
+      - id: action
+        uses: .
+        with:
+          zip-path: hello-dolly.zip
+          plugin: hello-dolly
+          version: "1.7.2"
+          dry-run: "true"
+
+      - name: Assert zip-url output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.zip-url }}
+        run: |
+          echo "actual zip-url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected zip-url output to be non-empty"
+            exit 1
+          fi
+          if [ "$ACTUAL" != "https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip" ]; then
+            echo "FAIL: expected zip-url to be 'https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip', got '$ACTUAL'"
+            exit 1
+          fi
+          echo "PASS"

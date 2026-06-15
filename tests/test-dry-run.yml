@@ -1,0 +1,51 @@
+name: Test dry-run mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Pre-download the plugin zip so we can pass it as zip-path.
+      # The action will also download the same zip from wordpress.org and diff them.
+      - name: Download plugin zip for zip-path input
+        run: |
+          curl --silent --output hello-dolly.zip \
+            "https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip"
+          echo "Downloaded hello-dolly.zip"
+          ls -lh hello-dolly.zip
+
+      - id: action
+        uses: .
+        with:
+          zip-path: hello-dolly.zip
+          plugin: hello-dolly
+          version: "1.7.2"
+          dry-run: "true"
+
+      - name: Assert zip-url output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.zip-url }}
+        run: |
+          echo "actual zip-url: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: zip-url output should not be empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert zip-sha-256 output is set
+        env:
+          ACTUAL: ${{ steps.action.outputs.zip-sha-256 }}
+        run: |
+          echo "actual zip-sha-256: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: zip-sha-256 output should not be empty"
+            exit 1
+          fi
+          if [ ${#ACTUAL} -ne 64 ]; then
+            echo "FAIL: zip-sha-256 should be 64 hex characters, got ${#ACTUAL}"
+            exit 1
+          fi
+          echo "PASS"

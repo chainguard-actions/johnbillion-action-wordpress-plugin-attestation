@@ -1,0 +1,31 @@
+name: Test basic dry-run with zip-path
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download plugin ZIP as local fixture
+        run: |
+          # Use a small, stable WordPress.org plugin for testing
+          curl -sL -o hello-dolly.1.7.2.zip \
+            "https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip"
+          echo "Downloaded ZIP:"
+          ls -lh hello-dolly.1.7.2.zip
+
+      - id: action
+        uses: .
+        with:
+          zip-path: hello-dolly.1.7.2.zip
+          plugin: hello-dolly
+          version: "1.7.2"
+          dry-run: "true"
+          timeout: "2"
+
+      - name: Assert action completed without error
+        run: |
+          echo "Action completed successfully in dry-run mode"
+          echo "PASS"

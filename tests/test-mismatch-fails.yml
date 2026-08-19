@@ -1,0 +1,93 @@
+name: Test mismatch detection
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create two different plugin zips and mock curl
+        run: |
+          # Create the "generated" zip (local zip-path) - this is what the developer built
+          mkdir -p /tmp/generated/my-plugin
+          echo "<?php // Plugin Name: My Plugin" > /tmp/generated/my-plugin/my-plugin.php
+          echo "readme content v1" > /tmp/generated/my-plugin/readme.txt
+          cd /tmp/generated
+          zip -r my-plugin.zip my-plugin/
+          cp /tmp/generated/my-plugin.zip "$GITHUB_WORKSPACE/my-plugin-generated.zip"
+
+          # Create a different "deployed" zip (served via mock curl) - simulates a tampered/different zip
+          mkdir -p /tmp/deployed/my-plugin
+          echo "<?php // Plugin Name: My Plugin" > /tmp/deployed/my-plugin/my-plugin.php
+          echo "readme content v2 DIFFERENT" > /tmp/deployed/my-plugin/readme.txt
+          cd /tmp/deployed
+          zip -r my-plugin.1.0.0.zip my-plugin/
+
+          # Place the deployed zip where the mock curl will serve it
+          cp /tmp/deployed/my-plugin.1.0.0.zip /tmp/served-plugin.zip
+
+          # Create a mock curl using printf to avoid heredoc YAML issues
+          mkdir -p /tmp/mock-bin
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'out=""' \
+            'head_only=0' \
+            'url=""' \
+            'prev=""' \
+            'for arg in "$@"; do' \
+            '  case "$prev" in' \
+            '    -o|--output) out="$arg" ;;' \
+            '  esac' \
+            '  case "$arg" in' \
+            '    --head|-I) head_only=1 ;;' \
+            '    http://*|https://*) url="$arg" ;;' \
+            '  esac' \
+            '  prev="$arg"' \
+            'done' \
+            'case "$url" in' \
+            '  *my-plugin*|*mismatch-host*)' \
+            '    if [ "$head_only" = "1" ]; then' \
+            '      echo "200"' \
+            '      exit 0' \
+            '    else' \
+            '      if [ -n "$out" ] && [ "$out" != "/dev/null" ]; then' \
+            '        cp /tmp/served-plugin.zip "$out"' \
+            '      else' \
+            '        cat /tmp/served-plugin.zip' \
+            '      fi' \
+            '      exit 0' \
+            '    fi' \
+            '    ;;' \
+            '  *)' \
+            '    exec /usr/bin/curl "$@"' \
+            '    ;;' \
+            'esac' \
+            > /tmp/mock-bin/curl
+          chmod +x /tmp/mock-bin/curl
+
+          # Prepend mock-bin to PATH for subsequent steps
+          echo "/tmp/mock-bin" >> "$GITHUB_PATH"
+
+      - name: Run action expecting failure due to content mismatch
+        id: action
+        uses: .
+        continue-on-error: true
+        with:
+          zip-path: my-plugin-generated.zip
+          plugin: my-plugin
+          version: "1.0.0"
+          timeout: 1
+          zip-url: "http://mismatch-host/my-plugin.1.0.0.zip"
+          dry-run: "true"
+
+      - name: Assert action failed due to mismatch
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "action outcome: $OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: expected action to fail due to zip content mismatch, but outcome was $OUTCOME"
+            exit 1
+          fi
+          echo "PASS: action correctly failed when zip contents do not match"

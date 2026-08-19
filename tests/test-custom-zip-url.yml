@@ -1,4 +1,4 @@
-name: Test dry-run mode
+name: Test custom zip-url with placeholder substitution
 on:
   workflow_dispatch:
 jobs:
@@ -10,19 +10,19 @@ jobs:
       - name: Create test plugin zip and mock curl
         run: |
           # Create the plugin directory structure
-          mkdir -p /tmp/plugin-src/my-test-plugin
-          echo "<?php // Plugin Name: My Test Plugin" > /tmp/plugin-src/my-test-plugin/my-test-plugin.php
-          echo "readme content" > /tmp/plugin-src/my-test-plugin/readme.txt
+          mkdir -p /tmp/plugin-src/cool-plugin
+          echo "<?php // Plugin Name: Cool Plugin" > /tmp/plugin-src/cool-plugin/cool-plugin.php
+          echo "readme" > /tmp/plugin-src/cool-plugin/readme.txt
 
           # Create the zip (same zip used for both "generated" and "deployed")
           cd /tmp/plugin-src
-          zip -r my-test-plugin.1.0.0.zip my-test-plugin/
+          zip -r cool-plugin.2.3.4.zip cool-plugin/
 
           # Copy to workspace so zip-path can reference it
-          cp /tmp/plugin-src/my-test-plugin.1.0.0.zip "$GITHUB_WORKSPACE/my-test-plugin.1.0.0.zip"
+          cp /tmp/plugin-src/cool-plugin.2.3.4.zip "$GITHUB_WORKSPACE/cool-plugin.2.3.4.zip"
 
           # Also place the zip where the mock curl will serve it
-          cp /tmp/plugin-src/my-test-plugin.1.0.0.zip /tmp/served-plugin.zip
+          cp /tmp/plugin-src/cool-plugin.2.3.4.zip /tmp/served-plugin.zip
 
           # Create a mock curl using printf to avoid heredoc YAML issues
           mkdir -p /tmp/mock-bin
@@ -43,7 +43,7 @@ jobs:
             '  prev="$arg"' \
             'done' \
             'case "$url" in' \
-            '  *my-test-plugin*|*fake-host*)' \
+            '  *cool-plugin*|*example-host*)' \
             '    if [ "$head_only" = "1" ]; then' \
             '      echo "200"' \
             '      exit 0' \
@@ -66,33 +66,30 @@ jobs:
           # Prepend mock-bin to PATH for subsequent steps
           echo "/tmp/mock-bin" >> "$GITHUB_PATH"
 
-      - name: Run action in dry-run mode with mocked curl
+      - name: Run action with custom zip-url template containing placeholders
         id: action
         uses: .
         with:
-          zip-path: my-test-plugin.1.0.0.zip
-          plugin: my-test-plugin
-          version: "1.0.0"
+          zip-path: cool-plugin.2.3.4.zip
+          plugin: cool-plugin
+          version: "2.3.4"
           timeout: 1
-          zip-url: "http://fake-host/my-test-plugin.1.0.0.zip"
+          zip-url: "http://example-host/%plugin%.%version%.zip"
           dry-run: "true"
 
-      - name: Assert zip-url output is set
+      - name: Assert zip-url output has placeholders substituted
         env:
           ACTUAL: ${{ steps.action.outputs.zip-url }}
         run: |
           echo "actual zip-url: $ACTUAL"
-          if [ -z "$ACTUAL" ]; then
-            echo "FAIL: zip-url output is empty"
+          EXPECTED="http://example-host/cool-plugin.2.3.4.zip"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "FAIL: expected zip-url '$EXPECTED' but got '$ACTUAL'"
             exit 1
           fi
-          if [ "$ACTUAL" != "http://fake-host/my-test-plugin.1.0.0.zip" ]; then
-            echo "FAIL: expected zip-url to be 'http://fake-host/my-test-plugin.1.0.0.zip' but got '$ACTUAL'"
-            exit 1
-          fi
-          echo "PASS: zip-url output is correct"
+          echo "PASS: zip-url placeholders correctly substituted"
 
-      - name: Assert zip-sha-256 output is set
+      - name: Assert zip-sha-256 output is a valid SHA-256 hash
         env:
           ACTUAL: ${{ steps.action.outputs.zip-sha-256 }}
         run: |
@@ -101,7 +98,6 @@ jobs:
             echo "FAIL: zip-sha-256 output is empty"
             exit 1
           fi
-          # Verify it looks like a SHA-256 hash (64 hex chars)
           if ! echo "$ACTUAL" | grep -qE '^[0-9a-f]{64}$'; then
             echo "FAIL: zip-sha-256 does not look like a valid SHA-256 hash: $ACTUAL"
             exit 1

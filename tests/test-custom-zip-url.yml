@@ -1,0 +1,57 @@
+name: Test custom zip-url with placeholder substitution
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Download the real plugin ZIP from WordPress.org to use as the "local" ZIP.
+      # IMPORTANT: Use a different filename than what the action will download to
+      # (the action downloads to "${PLUGIN}.zip" = "akismet.zip").
+      # If we use the same filename, the action overwrites our pre-downloaded file.
+      - name: Download plugin ZIP as local copy
+        run: |
+          curl --silent --output local-akismet.zip \
+            https://downloads.wordpress.org/plugin/akismet.5.3.3.zip
+          echo "Downloaded local-akismet.zip"
+          ls -lh local-akismet.zip
+
+      - name: Run action with custom zip-url template and dry-run
+        id: action
+        uses: .
+        with:
+          zip-path: local-akismet.zip
+          plugin: akismet
+          version: "5.3.3"
+          zip-url: "https://downloads.wordpress.org/plugin/%plugin%.%version%.zip"
+          dry-run: "true"
+          timeout: 2
+
+      - name: Assert zip-url output reflects correct substitution
+        env:
+          ACTUAL: ${{ steps.action.outputs.zip-url }}
+        run: |
+          echo "actual zip-url: $ACTUAL"
+          EXPECTED="https://downloads.wordpress.org/plugin/akismet.5.3.3.zip"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "FAIL: expected zip-url '$EXPECTED' but got '$ACTUAL'"
+            exit 1
+          fi
+          echo "PASS: zip-url substitution is correct"
+
+      - name: Assert no attestation outputs in dry-run mode
+        env:
+          BUNDLE_PATH: ${{ steps.action.outputs.bundle-path }}
+          ATTESTATION_ID: ${{ steps.action.outputs.attestation-id }}
+          ATTESTATION_URL: ${{ steps.action.outputs.attestation-url }}
+        run: |
+          echo "bundle-path: '$BUNDLE_PATH'"
+          echo "attestation-id: '$ATTESTATION_ID'"
+          echo "attestation-url: '$ATTESTATION_URL'"
+          if [ -n "$BUNDLE_PATH" ] || [ -n "$ATTESTATION_ID" ] || [ -n "$ATTESTATION_URL" ]; then
+            echo "FAIL: expected all attestation outputs to be empty in dry-run mode"
+            exit 1
+          fi
+          echo "PASS: all attestation outputs are empty as expected in dry-run mode"

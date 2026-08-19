@@ -1,4 +1,4 @@
-name: Test dry-run mode with zip-path
+name: Test dry-run mode
 on:
   workflow_dispatch:
 jobs:
@@ -7,32 +7,47 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Download plugin ZIP from WordPress.org
+      # Download the real plugin ZIP from WordPress.org to use as the "local" ZIP.
+      # IMPORTANT: Use a different filename than what the action will download to
+      # (the action downloads to "${PLUGIN}.zip" = "hello-dolly.zip").
+      # If we use the same filename, the action overwrites our pre-downloaded file.
+      - name: Download plugin ZIP as local copy
         run: |
-          curl --silent --output hello-dolly.zip \
-            "https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip"
-          echo "Downloaded hello-dolly.zip"
-          ls -lh hello-dolly.zip
+          curl --silent --output local-hello-dolly.zip \
+            https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip
+          echo "Downloaded local-hello-dolly.zip"
+          ls -lh local-hello-dolly.zip
 
-      - id: action
+      - name: Run action in dry-run mode
+        id: action
         uses: .
         with:
-          zip-path: hello-dolly.zip
+          zip-path: local-hello-dolly.zip
           plugin: hello-dolly
           version: "1.7.2"
+          zip-url: "https://downloads.wordpress.org/plugin/%plugin%.%version%.zip"
           dry-run: "true"
+          timeout: 2
 
-      - name: Assert zip-url output is set
+      - name: Assert zip-url output is set correctly
         env:
           ACTUAL: ${{ steps.action.outputs.zip-url }}
         run: |
           echo "actual zip-url: $ACTUAL"
-          if [ -z "$ACTUAL" ]; then
-            echo "FAIL: expected zip-url output to be non-empty"
+          EXPECTED="https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "FAIL: expected zip-url '$EXPECTED' but got '$ACTUAL'"
             exit 1
           fi
-          if [ "$ACTUAL" != "https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip" ]; then
-            echo "FAIL: expected zip-url to be 'https://downloads.wordpress.org/plugin/hello-dolly.1.7.2.zip', got '$ACTUAL'"
+          echo "PASS: zip-url output is correct"
+
+      - name: Assert bundle-path is empty in dry-run mode
+        env:
+          ACTUAL: ${{ steps.action.outputs.bundle-path }}
+        run: |
+          echo "actual bundle-path: '$ACTUAL'"
+          if [ -n "$ACTUAL" ]; then
+            echo "FAIL: expected empty bundle-path in dry-run mode but got '$ACTUAL'"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: bundle-path is empty as expected in dry-run mode"

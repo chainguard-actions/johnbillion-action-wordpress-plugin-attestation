@@ -1,0 +1,73 @@
+name: Test timeout error when ZIP not available
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/tags/1.0.0
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Create a dummy local ZIP (won't be used since fetch will fail)
+      - name: Create dummy plugin ZIP
+        run: |
+          mkdir -p /tmp/nonexistent-plugin/nonexistent-plugin
+          echo "<?php // Plugin Name: Nonexistent Plugin" > /tmp/nonexistent-plugin/nonexistent-plugin/nonexistent-plugin.php
+          cd /tmp/nonexistent-plugin
+          zip -r /tmp/nonexistent-plugin.zip nonexistent-plugin/
+
+      # Start a local HTTP server that returns 404 for all requests
+      - name: Start local HTTP server returning 404
+        run: |
+          # Use python to serve a 404 for all requests
+          python3 -c "
+          import http.server, socketserver
+
+          class Handler404(http.server.BaseHTTPRequestHandler):
+              def do_HEAD(self):
+                  self.send_response(404)
+                  self.end_headers()
+              def do_GET(self):
+                  self.send_response(404)
+                  self.end_headers()
+              def log_message(self, format, *args):
+                  pass
+
+          with socketserver.TCPServer(('', 8766), Handler404) as httpd:
+              httpd.serve_forever()
+          " &
+          sleep 2
+          echo "404 server started on port 8766"
+          # Verify it returns 404
+          status=$(curl -s -o /dev/null -w "%{http_code}" -I http://localhost:8766/test.zip)
+          echo "Status: $status"
+          if [ "$status" != "404" ]; then
+            echo "FAIL: expected 404 from test server, got $status"
+            exit 1
+          fi
+
+      - name: Run action expecting failure
+        id: action
+        uses: .
+        continue-on-error: true
+        with:
+          zip-path: /tmp/nonexistent-plugin.zip
+          plugin: nonexistent-plugin
+          version: "1.0.0"
+          dry-run: "true"
+          zip-url: "http://localhost:8766/%plugin%.%version%.zip"
+          timeout: 1
+
+      - name: Assert action failed due to timeout
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: expected action to fail due to timeout, but outcome was '$OUTCOME'"
+            exit 1
+          fi
+          echo "PASS: action correctly failed when ZIP was not available"

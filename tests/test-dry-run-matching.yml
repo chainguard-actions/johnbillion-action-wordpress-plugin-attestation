@@ -1,0 +1,76 @@
+name: Test dry-run with matching ZIPs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create test plugin files and ZIPs
+        run: |
+          mkdir -p /tmp/plugin-content/my-test-plugin
+          echo "<?php // Plugin Name: My Test Plugin" > /tmp/plugin-content/my-test-plugin/my-test-plugin.php
+          echo "readme content" > /tmp/plugin-content/my-test-plugin/readme.txt
+          cd /tmp/plugin-content
+          zip -r /tmp/my-test-plugin-generated.zip my-test-plugin/
+          cp /tmp/my-test-plugin-generated.zip /tmp/my-test-plugin-remote.zip
+
+      - name: Install fake curl that serves the remote ZIP
+        run: |
+          mkdir -p /tmp/fake-bin
+          printf '%s\n' '#!/bin/sh' \
+            'out=""' \
+            'head_only=false' \
+            'prev=""' \
+            'for arg in "$@"; do' \
+            '  case "$prev" in' \
+            '    -o|--output) out="$arg" ;;' \
+            '  esac' \
+            '  case "$arg" in' \
+            '    -I|--head) head_only=true ;;' \
+            '  esac' \
+            '  prev="$arg"' \
+            'done' \
+            'case "$*" in' \
+            '  *my-test-plugin*)' \
+            '    if $head_only; then' \
+            '      printf "200"' \
+            '      exit 0' \
+            '    fi' \
+            '    if [ -n "$out" ] && [ "$out" != "/dev/null" ]; then' \
+            '      cp /tmp/my-test-plugin-remote.zip "$out"' \
+            '    else' \
+            '      cat /tmp/my-test-plugin-remote.zip' \
+            '    fi' \
+            '    exit 0' \
+            '    ;;' \
+            'esac' \
+            'exec /usr/bin/curl "$@"' \
+            > /tmp/fake-bin/curl
+          chmod +x /tmp/fake-bin/curl
+          echo "/tmp/fake-bin" >> "$GITHUB_PATH"
+
+      - name: Verify fake curl outputs 200 for HEAD
+        run: |
+          result=$(curl -s -o /dev/null -w "%{http_code}" -I "https://downloads.wordpress.org/plugin/my-test-plugin.1.0.0.zip")
+          echo "HEAD result: '$result'"
+          if [ "$result" != "200" ]; then
+            echo "FAIL: fake curl HEAD did not return 200"
+            exit 1
+          fi
+          echo "PASS: fake curl HEAD returns 200"
+
+      - id: action
+        uses: .
+        with:
+          zip-path: /tmp/my-test-plugin-generated.zip
+          plugin: my-test-plugin
+          version: "1.0.0"
+          zip-url: "https://downloads.wordpress.org/plugin/%plugin%.%version%.zip"
+          dry-run: "true"
+          timeout: 1
+
+      - name: Assert action completed successfully
+        run: |
+          echo "PASS: action completed without error in dry-run mode"

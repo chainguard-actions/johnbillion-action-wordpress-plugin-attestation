@@ -1,0 +1,49 @@
+name: Test dry-run with local ZIP server
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/tags/1.0.0
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Create a minimal plugin ZIP with known contents
+      - name: Create plugin ZIP
+        run: |
+          mkdir -p /tmp/my-test-plugin/my-test-plugin
+          echo "<?php // Plugin Name: My Test Plugin" > /tmp/my-test-plugin/my-test-plugin/my-test-plugin.php
+          cd /tmp/my-test-plugin
+          zip -r /tmp/my-test-plugin.zip my-test-plugin/
+          echo "Created ZIP at /tmp/my-test-plugin.zip"
+          ls -lh /tmp/my-test-plugin.zip
+
+      # Start a local HTTP server to serve the ZIP
+      - name: Start local HTTP server
+        run: |
+          mkdir -p /tmp/serve
+          cp /tmp/my-test-plugin.zip /tmp/serve/my-test-plugin.1.0.0.zip
+          cd /tmp/serve
+          python3 -m http.server 8765 &
+          echo "HTTP server started on port 8765"
+          sleep 2
+          # Verify server is up
+          curl -s -o /dev/null -w "%{http_code}" http://localhost:8765/my-test-plugin.1.0.0.zip
+
+      - name: Run action in dry-run mode
+        uses: .
+        with:
+          zip-path: /tmp/my-test-plugin.zip
+          plugin: my-test-plugin
+          version: "1.0.0"
+          dry-run: "true"
+          zip-url: "http://localhost:8765/%plugin%.%version%.zip"
+          timeout: 1
+
+      - name: Assert action completed successfully
+        run: |
+          echo "Action completed without error in dry-run mode"
+          echo "PASS"

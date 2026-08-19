@@ -1,0 +1,68 @@
+name: Test ZIP content mismatch detection
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/tags/1.0.0
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Create two different ZIPs - one to serve (remote) and one as local (different content)
+      - name: Create mismatched ZIPs
+        run: |
+          # Create the "remote" ZIP (served by HTTP server)
+          mkdir -p /tmp/remote-plugin/mismatch-plugin
+          echo "<?php // Plugin Name: Mismatch Plugin - REMOTE VERSION" > /tmp/remote-plugin/mismatch-plugin/mismatch-plugin.php
+          cd /tmp/remote-plugin
+          zip -r /tmp/remote-mismatch-plugin.zip mismatch-plugin/
+
+          # Create the "local" ZIP (different content)
+          mkdir -p /tmp/local-plugin/mismatch-plugin
+          echo "<?php // Plugin Name: Mismatch Plugin - LOCAL VERSION (different)" > /tmp/local-plugin/mismatch-plugin/mismatch-plugin.php
+          cd /tmp/local-plugin
+          zip -r /tmp/local-mismatch-plugin.zip mismatch-plugin/
+
+          echo "Created two ZIPs with different contents"
+
+      # Start a local HTTP server to serve the remote ZIP
+      - name: Start local HTTP server
+        run: |
+          mkdir -p /tmp/serve-mismatch
+          cp /tmp/remote-mismatch-plugin.zip /tmp/serve-mismatch/mismatch-plugin.1.0.0.zip
+          cd /tmp/serve-mismatch
+          python3 -m http.server 8767 &
+          sleep 2
+          echo "HTTP server started on port 8767"
+          status=$(curl -s -o /dev/null -w "%{http_code}" -I http://localhost:8767/mismatch-plugin.1.0.0.zip)
+          echo "Status: $status"
+          if [ "$status" != "200" ]; then
+            echo "FAIL: expected 200 from test server, got $status"
+            exit 1
+          fi
+
+      - name: Run action expecting failure due to mismatch
+        id: action
+        uses: .
+        continue-on-error: true
+        with:
+          zip-path: /tmp/local-mismatch-plugin.zip
+          plugin: mismatch-plugin
+          version: "1.0.0"
+          dry-run: "true"
+          zip-url: "http://localhost:8767/%plugin%.%version%.zip"
+          timeout: 1
+
+      - name: Assert action failed due to ZIP mismatch
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: expected action to fail due to ZIP content mismatch, but outcome was '$OUTCOME'"
+            exit 1
+          fi
+          echo "PASS: action correctly detected ZIP content mismatch"

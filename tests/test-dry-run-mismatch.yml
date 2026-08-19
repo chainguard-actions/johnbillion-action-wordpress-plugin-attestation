@@ -1,0 +1,80 @@
+name: Test dry-run with mismatched ZIPs (should fail)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create mismatched plugin ZIPs
+        run: |
+          mkdir -p /tmp/generated-content/my-mismatch-plugin
+          echo "<?php // Plugin Name: My Mismatch Plugin" > /tmp/generated-content/my-mismatch-plugin/my-mismatch-plugin.php
+          echo "readme content v1" > /tmp/generated-content/my-mismatch-plugin/readme.txt
+          cd /tmp/generated-content
+          zip -r /tmp/my-mismatch-plugin-generated.zip my-mismatch-plugin/
+
+          mkdir -p /tmp/remote-content/my-mismatch-plugin
+          echo "<?php // Plugin Name: My Mismatch Plugin" > /tmp/remote-content/my-mismatch-plugin/my-mismatch-plugin.php
+          echo "readme content v2 DIFFERENT" > /tmp/remote-content/my-mismatch-plugin/readme.txt
+          cd /tmp/remote-content
+          zip -r /tmp/my-mismatch-plugin-remote.zip my-mismatch-plugin/
+
+      - name: Install fake curl that serves the mismatched remote ZIP
+        run: |
+          mkdir -p /tmp/fake-bin-mismatch
+          printf '%s\n' '#!/bin/sh' \
+            'out=""' \
+            'head_only=false' \
+            'prev=""' \
+            'for arg in "$@"; do' \
+            '  case "$prev" in' \
+            '    -o|--output) out="$arg" ;;' \
+            '  esac' \
+            '  case "$arg" in' \
+            '    -I|--head) head_only=true ;;' \
+            '  esac' \
+            '  prev="$arg"' \
+            'done' \
+            'case "$*" in' \
+            '  *my-mismatch-plugin*)' \
+            '    if $head_only; then' \
+            '      printf "200"' \
+            '      exit 0' \
+            '    fi' \
+            '    if [ -n "$out" ] && [ "$out" != "/dev/null" ]; then' \
+            '      cp /tmp/my-mismatch-plugin-remote.zip "$out"' \
+            '    else' \
+            '      cat /tmp/my-mismatch-plugin-remote.zip' \
+            '    fi' \
+            '    exit 0' \
+            '    ;;' \
+            'esac' \
+            'exec /usr/bin/curl "$@"' \
+            > /tmp/fake-bin-mismatch/curl
+          chmod +x /tmp/fake-bin-mismatch/curl
+          echo "/tmp/fake-bin-mismatch" >> "$GITHUB_PATH"
+
+      - name: Run action and expect failure due to mismatch
+        id: action
+        uses: .
+        with:
+          zip-path: /tmp/my-mismatch-plugin-generated.zip
+          plugin: my-mismatch-plugin
+          version: "1.0.0"
+          zip-url: "https://downloads.wordpress.org/plugin/%plugin%.%version%.zip"
+          dry-run: "true"
+          timeout: 1
+        continue-on-error: true
+
+      - name: Assert action failed due to content mismatch
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "action outcome: $OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: expected action to fail due to ZIP content mismatch, but got: $OUTCOME"
+            exit 1
+          fi
+          echo "PASS: action correctly failed when ZIPs have different contents"

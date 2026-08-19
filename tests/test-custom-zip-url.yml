@@ -1,0 +1,73 @@
+name: Test custom zip-url with variable substitution
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create test plugin ZIPs
+        run: |
+          mkdir -p /tmp/custom-plugin-content/custom-plugin
+          echo "<?php // Plugin Name: Custom Plugin" > /tmp/custom-plugin-content/custom-plugin/custom-plugin.php
+          echo "Custom plugin readme" > /tmp/custom-plugin-content/custom-plugin/readme.txt
+          cd /tmp/custom-plugin-content
+          zip -r /tmp/custom-plugin-generated.zip custom-plugin/
+          cp /tmp/custom-plugin-generated.zip /tmp/custom-plugin-remote.zip
+
+      - name: Install fake curl that validates URL substitution
+        run: |
+          mkdir -p /tmp/fake-bin-custom
+          printf '%s\n' '#!/bin/sh' \
+            '# Fake curl: validates %plugin% and %version% were substituted in the URL.' \
+            'out=""' \
+            'head_only=false' \
+            'url=""' \
+            'prev=""' \
+            'for arg in "$@"; do' \
+            '  case "$prev" in' \
+            '    -o|--output) out="$arg" ;;' \
+            '  esac' \
+            '  case "$arg" in' \
+            '    -I|--head) head_only=true ;;' \
+            '    http*) url="$arg" ;;' \
+            '  esac' \
+            '  prev="$arg"' \
+            'done' \
+            'case "$url" in' \
+            '  *custom-plugin*2.3.4*)' \
+            '    if $head_only; then' \
+            '      printf "200"' \
+            '      exit 0' \
+            '    fi' \
+            '    if [ -n "$out" ] && [ "$out" != "/dev/null" ]; then' \
+            '      cp /tmp/custom-plugin-remote.zip "$out"' \
+            '    else' \
+            '      cat /tmp/custom-plugin-remote.zip' \
+            '    fi' \
+            '    exit 0' \
+            '    ;;' \
+            '  *%plugin%*|*%version%*)' \
+            '    echo "ERROR: URL still contains unsubstituted placeholders: $url" >&2' \
+            '    exit 1' \
+            '    ;;' \
+            'esac' \
+            'exec /usr/bin/curl "$@"' \
+            > /tmp/fake-bin-custom/curl
+          chmod +x /tmp/fake-bin-custom/curl
+          echo "/tmp/fake-bin-custom" >> "$GITHUB_PATH"
+
+      - id: action
+        uses: .
+        with:
+          zip-path: /tmp/custom-plugin-generated.zip
+          plugin: custom-plugin
+          version: "2.3.4"
+          zip-url: "https://example.com/plugins/%plugin%/%version%/%plugin%.%version%.zip"
+          dry-run: "true"
+          timeout: 1
+
+      - name: Assert action completed successfully with custom URL
+        run: |
+          echo "PASS: action completed with custom zip-url and correct variable substitution"

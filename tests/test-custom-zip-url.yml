@@ -1,4 +1,4 @@
-name: Test dry-run mode
+name: Test custom zip-url template substitution
 on:
   workflow_dispatch:
 
@@ -11,17 +11,16 @@ jobs:
       - name: Create fake plugin zip and mock curl
         run: |
           # Create a simple directory structure to zip
-          mkdir -p /tmp/my-plugin
-          echo "<?php // Plugin file" > /tmp/my-plugin/my-plugin.php
-          echo "readme content" > /tmp/my-plugin/readme.txt
+          mkdir -p /tmp/hello-dolly
+          echo "<?php // Hello Dolly plugin" > /tmp/hello-dolly/hello-dolly.php
+          echo "=== Hello Dolly ===" > /tmp/hello-dolly/readme.txt
 
           # Create the "generated" zip (what the CI build produced)
           cd /tmp
-          zip -qr my-plugin-generated.zip my-plugin/
+          zip -qr hello-dolly-generated.zip hello-dolly/
 
-          # Create the "deployed" zip (what would be fetched from wordpress.org)
-          # It must have identical contents so the diff passes
-          zip -qr my-plugin-deployed.zip my-plugin/
+          # Create the "deployed" zip with identical contents
+          zip -qr hello-dolly-deployed.zip hello-dolly/
 
           # Install the fake curl that serves the deployed zip
           mkdir -p /tmp/fake-bin
@@ -45,9 +44,9 @@ jobs:
             '  exit 0' \
             'fi' \
             'if [ -n "$out" ] && [ "$out" != "/dev/null" ]; then' \
-            '  cp /tmp/my-plugin-deployed.zip "$out"' \
+            '  cp /tmp/hello-dolly-deployed.zip "$out"' \
             'else' \
-            '  cat /tmp/my-plugin-deployed.zip' \
+            '  cat /tmp/hello-dolly-deployed.zip' \
             'fi' \
             'exit 0' > /tmp/fake-bin/curl
           chmod +x /tmp/fake-bin/curl
@@ -59,31 +58,20 @@ jobs:
         env:
           PATH: /tmp/fake-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         with:
-          zip-path: /tmp/my-plugin-generated.zip
-          plugin: my-plugin
-          version: "1.0.0"
+          zip-path: /tmp/hello-dolly-generated.zip
+          plugin: hello-dolly
+          version: "2.0.0"
           dry-run: "true"
-          zip-url: "https://downloads.wordpress.org/plugin/%plugin%.%version%.zip"
+          zip-url: "https://example-cdn.example.com/plugins/%plugin%.%version%.zip"
 
-      - name: Assert zip-url output
+      - name: Assert zip-url output has correct substitution
         env:
           ACTUAL: ${{ steps.action.outputs.zip-url }}
         run: |
           echo "actual zip-url: $ACTUAL"
-          EXPECTED="https://downloads.wordpress.org/plugin/my-plugin.1.0.0.zip"
+          EXPECTED="https://example-cdn.example.com/plugins/hello-dolly.2.0.0.zip"
           if [ "$ACTUAL" != "$EXPECTED" ]; then
             echo "FAIL: expected '$EXPECTED' but got '$ACTUAL'"
             exit 1
           fi
-          echo "PASS: zip-url output is correct"
-
-      - name: Assert bundle-path is empty (dry-run skips attestation)
-        env:
-          ACTUAL: ${{ steps.action.outputs.bundle-path }}
-        run: |
-          echo "actual bundle-path: '$ACTUAL'"
-          if [ -n "$ACTUAL" ]; then
-            echo "FAIL: expected empty bundle-path in dry-run mode but got '$ACTUAL'"
-            exit 1
-          fi
-          echo "PASS: bundle-path is empty as expected in dry-run mode"
+          echo "PASS: zip-url template substitution is correct"

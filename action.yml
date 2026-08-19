@@ -78,13 +78,13 @@ runs:
         TIMEOUT: ${{ inputs.timeout }}
       run: | #shell
         zipurl="$ZIP_URL"
-        zipurl=${zipurl//%plugin%/$PLUGIN}
-        zipurl=${zipurl//%version%/$VERSION}
+        zipurl=${zipurl//%plugin%/"$PLUGIN"}
+        zipurl=${zipurl//%version%/"$VERSION"}
 
-        safe_plugin_host=$(printf '%s' "$(printf '%s' "$zipurl" | awk -F/ '{print $3}')" | tr -d '\n\r')
-        printf 'PLUGIN_HOST=%s\n' "$safe_plugin_host" >> "$GITHUB_ENV"
-        safe_zip_url=$(printf '%s' "$zipurl" | tr -d '\n\r')
-        printf 'zip-url=%s\n' "$safe_zip_url" >> "$GITHUB_OUTPUT"
+        safe_zipurl=$(printf '%s' "$zipurl" | tr -d '\n\r')
+        safe_host=$(printf '%s' "$zipurl" | awk -F/ '{print $3}' | tr -d '\n\r')
+        echo "PLUGIN_HOST=$safe_host" >> "$GITHUB_ENV"
+        echo "zip-url=$safe_zipurl" >> "$GITHUB_OUTPUT"
 
         echo "Fetching plugin zip from $zipurl ..."
         elapsed=0

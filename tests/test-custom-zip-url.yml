@@ -1,0 +1,62 @@
+name: Test custom zip-url input
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Use a specific version of a small plugin with a custom URL pattern.
+      # We download the zip first so we can use it as the "generated" local zip.
+      # We use a DIFFERENT filename than what the action will download to (classic-editor.zip),
+      # so the action's download does not overwrite our local copy.
+      # The custom zip-url uses %plugin% and %version% placeholders.
+      - name: Download plugin zip to use as the local generated zip
+        run: |
+          curl --silent --fail --output classic-editor-build.zip \
+            "https://downloads.wordpress.org/plugin/classic-editor.1.6.5.zip"
+          echo "Downloaded classic-editor-build.zip:"
+          ls -lh classic-editor-build.zip
+
+      - id: action
+        uses: .
+        with:
+          zip-path: classic-editor-build.zip
+          plugin: classic-editor
+          version: "1.6.5"
+          dry-run: "true"
+          timeout: 5
+          zip-url: "https://downloads.wordpress.org/plugin/%plugin%.%version%.zip"
+
+      - name: Assert zip-url output reflects custom url with substitutions
+        env:
+          ZIP_URL: ${{ steps.action.outputs.zip-url }}
+        run: |
+          echo "zip-url: $ZIP_URL"
+          if [ -z "$ZIP_URL" ]; then
+            echo "FAIL: zip-url output is empty"
+            exit 1
+          fi
+          EXPECTED="https://downloads.wordpress.org/plugin/classic-editor.1.6.5.zip"
+          if [ "$ZIP_URL" != "$EXPECTED" ]; then
+            echo "FAIL: expected zip-url='$EXPECTED', got '$ZIP_URL'"
+            exit 1
+          fi
+          echo "PASS: zip-url=$ZIP_URL"
+
+      - name: Assert zip-sha-256 output is a valid hash
+        env:
+          ZIP_SHA: ${{ steps.action.outputs.zip-sha-256 }}
+        run: |
+          echo "zip-sha-256: $ZIP_SHA"
+          if [ -z "$ZIP_SHA" ]; then
+            echo "FAIL: zip-sha-256 output is empty"
+            exit 1
+          fi
+          if ! echo "$ZIP_SHA" | grep -qE '^[0-9a-f]{64}$'; then
+            echo "FAIL: zip-sha-256 does not look like a valid SHA-256 hash: '$ZIP_SHA'"
+            exit 1
+          fi
+          echo "PASS: zip-sha-256=$ZIP_SHA"

@@ -85,8 +85,8 @@ runs:
         zipurl=${zipurl//%version%/$VERSION}
 
         safe_zipurl=$(printf '%s' "$zipurl" | tr -d '\n\r')
-        safe_plugin_host=$(printf '%s' "$zipurl" | awk -F/ '{print $3}' | tr -d '\n\r')
-        echo "PLUGIN_HOST=$safe_plugin_host" >> "$GITHUB_ENV"
+        safe_host=$(printf '%s' "$safe_zipurl" | awk -F/ '{print $3}' | tr -d '\n\r')
+        echo "PLUGIN_HOST=$safe_host" >> "$GITHUB_ENV"
         echo "zip-url=$safe_zipurl" >> "$GITHUB_OUTPUT"
 
         echo "Fetching plugin zip from $zipurl ..."
@@ -139,7 +139,7 @@ runs:
     - name: Generate attestation for the zip
       if: ${{ inputs.dry-run == 'false' }}
       id: generate-attestation
-      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      uses: chainguard-actions/actions-attest@d290773026c08986db4ae50e50d962006f429d8c # v4.1.0
       env:
         PLUGIN: ${{ inputs.plugin }}
         VERSION: ${{ inputs.version }}

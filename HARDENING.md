@@ -10,23 +10,25 @@
 
 **Harden Agent Version:** `2`
 
-Action **johnbillion--action-wordpress-plugin-attestation/0.7.3** was hardened automatically. 1 finding(s) were identified and resolved across 1 iteration(s).
+Action **johnbillion--action-wordpress-plugin-attestation/0.7.3** was hardened automatically. 2 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### github-env-injection (severity: high)
 
-In the 'Fetch zip from the plugin directory' step, the variable `zipurl` is constructed from untrusted inputs (`inputs.zip-url` → `$ZIP_URL`, `inputs.plugin` → `$PLUGIN`, `inputs.version` → `$VERSION`) and then written to `$GITHUB_ENV` and `$GITHUB_OUTPUT` without the required newline-stripping sanitization (`printf '%s' ... | tr -d '\n\r'`).
-
-1. `echo PLUGIN_HOST="$(echo "$zipurl" | awk -F/ '{print $3}')" >> "$GITHUB_ENV"` — the hostname extracted from a caller-controlled URL is written to GITHUB_ENV unsanitized.
-2. `echo zip-url="$zipurl" >> "$GITHUB_OUTPUT"` — the full caller-controlled URL is written to GITHUB_OUTPUT unsanitized.
-
-An attacker who controls `inputs.zip-url` (or `inputs.plugin`/`inputs.version`) can embed newline characters to inject arbitrary key=value pairs into the runner's environment or output context, potentially overwriting sensitive variables consumed by later steps.
+In the 'Fetch zip from the plugin directory' step, the variable $zipurl is constructed from inputs.plugin, inputs.version, and inputs.zip-url (all untrusted caller-controlled inputs) and then written directly to $GITHUB_ENV without sanitization: `echo PLUGIN_HOST="$(echo "$zipurl" | awk -F/ '{print $3}')" >> "$GITHUB_ENV"`. An attacker can inject newlines into these inputs to write arbitrary key=value pairs into the runner's environment, potentially overriding environment variables used by subsequent steps. The required sanitization step (`printf '%s' "$VAR" | tr -d '\n\r'`) is missing before this write.
 
 Locations:
 
-- `action.yml:62`
-- `action.yml:63`
+- `action.yml:72`
+
+### github-env-injection (severity: high)
+
+In the 'Fetch zip from the plugin directory' step, the variable $zipurl is constructed from inputs.plugin, inputs.version, and inputs.zip-url (all untrusted caller-controlled inputs) and then written directly to $GITHUB_OUTPUT without sanitization: `echo zip-url="$zipurl" >> "$GITHUB_OUTPUT"`. An attacker can inject newlines into these inputs to write arbitrary key=value pairs into the step output file, potentially poisoning outputs consumed by downstream steps or jobs. The required sanitization step (`printf '%s' "$VAR" | tr -d '\n\r'`) is missing before this write.
+
+Locations:
+
+- `action.yml:73`
 
 ## Iteration Notes
 
@@ -36,5 +38,5 @@ Locations:
 
 **Notes:**
 
-Fixed the 'Fetch zip from the plugin directory' step in action.yml. The zipurl value (derived from caller-controlled inputs zip-url, plugin, and version) was being written to $GITHUB_ENV and $GITHUB_OUTPUT without newline sanitization. Added sanitization using `printf '%s' ... | tr -d '\n\r'` for both the full URL written to GITHUB_OUTPUT and the hostname extracted for GITHUB_ENV. The safe_zipurl and safe_host variables are now stripped of newline/carriage-return characters before being written to the runner's environment and output context.
+Fixed two github-env-injection findings in action.yml at lines 72-73. The `$zipurl` value (derived from untrusted caller-controlled inputs: inputs.plugin, inputs.version, and inputs.zip-url) was being written directly to $GITHUB_ENV and $GITHUB_OUTPUT without sanitization. Fixed by introducing `safe_zipurl` and `safe_plugin_host` variables that strip newlines and carriage returns using `printf '%s' "$VAR" | tr -d '\n\r'` before writing to the environment and output files.
 

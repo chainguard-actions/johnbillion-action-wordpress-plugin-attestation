@@ -131,7 +131,7 @@ runs:
     - name: Generate attestation for the zip
       if: ${{ inputs.dry-run == 'false' }}
       id: generate-attestation
-      uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+      uses: chainguard-actions/actions-attest-build-provenance@90d1303f83d134fb8bfa03465a95b914441e267c # v2.2.3
       env:
         PLUGIN: ${{ inputs.plugin }}
         VERSION: ${{ inputs.version }}

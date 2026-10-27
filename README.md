@@ -6,13 +6,14 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 
 ## Versions
 
-| Version | Tag | Upstream commit |
-|---------|-----|-----------------|
-| 0.6.0 | [`0.6.0`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.6.0) | [`ccbb865`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/ccbb8653d9d29a5c2e1d6a21a2fcc5dfe695c5b2) |
-| 0.7.0 | [`0.7.0`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.0) | [`260e74a`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/260e74afa5d1ecbc57b4bb67e390159026b58d45) |
-| 0.7.1 | [`0.7.1`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.1) | [`b749ddf`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/b749ddf48d76c82d31a12c8ef336bd76af0a901b) |
-| 0.7.2 | [`0.7.2`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.2) | [`43a4155`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/43a41552d066765a14836551f49f852be957d845) |
-| 0.7.3 | [`0.7.3`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.3) | [`4bab69a`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/4bab69a053ffbafd35deba3eba557e429e6f19ea) |
+| Version | Tag | Upstream commit | Hardening report |
+|---------|-----|-----------------|------------------|
+| 0.6.0 | [`0.6.0`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.6.0) | [`ccbb865`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/ccbb8653d9d29a5c2e1d6a21a2fcc5dfe695c5b2) | [`HARDENING.md`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/blob/0.6.0/HARDENING.md) |
+| 0.7.0 | [`0.7.0`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.0) | [`260e74a`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/260e74afa5d1ecbc57b4bb67e390159026b58d45) | [`HARDENING.md`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/blob/0.7.0/HARDENING.md) |
+| 0.7.1 | [`0.7.1`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.1) | [`b749ddf`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/b749ddf48d76c82d31a12c8ef336bd76af0a901b) | [`HARDENING.md`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/blob/0.7.1/HARDENING.md) |
+| 0.7.2 | [`0.7.2`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.2) | [`43a4155`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/43a41552d066765a14836551f49f852be957d845) | [`HARDENING.md`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/blob/0.7.2/HARDENING.md) |
+| 0.7.3 | [`0.7.3`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.3) | [`4bab69a`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/4bab69a053ffbafd35deba3eba557e429e6f19ea) | [`HARDENING.md`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/blob/0.7.3/HARDENING.md) |
+| 0.7.4 | [`0.7.4`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/tree/0.7.4) | [`53670e9`](https://github.com/johnbillion/action-wordpress-plugin-attestation/commit/53670e9a57dbd5b349467e669b8def15e9fd3ea3) | [`HARDENING.md`](https://github.com/chainguard-actions/johnbillion-action-wordpress-plugin-attestation/blob/0.7.4/HARDENING.md) |
 
 ## Privacy
 

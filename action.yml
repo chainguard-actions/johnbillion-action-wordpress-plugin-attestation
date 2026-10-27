@@ -1,0 +1,182 @@
+name: WordPress Plugin Attestation
+description: Generates an attestation for the build provenance of a plugin published on the wordpress.org plugin directory
+author: johnbillion
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  zip-path:
+    description: The local path to the plugin zip file.
+    required: true
+    type: string
+  plugin:
+    description: Optional. The plugin slug.
+    required: false
+    type: string
+    default: ${{ github.event.repository.name }}
+  version:
+    description: Optional. The version number of the release.
+    required: false
+    type: string
+    default: ${{ github.ref_name }}
+  timeout:
+    description: Optional. The maximum time in minutes to wait for the plugin zip to become available in the plugin directory.
+    required: false
+    type: number
+    default: 60
+  zip-url:
+    description: Optional. The URL where the plugin zip file is hosted (for platforms other than wordpress.org).
+    required: false
+    type: string
+    default: 'https://downloads.wordpress.org/plugin/%plugin%.%version%.zip'
+  dry-run:
+    description: Optional. Set this to true to skip generating the actual attestation.
+    required: false
+    type: boolean
+    default: false
+outputs:
+  bundle-path:
+    description: Absolute path to the file containing the generated attestation.
+    value: ${{ steps.generate-attestation.outputs.bundle-path }}
+  attestation-id:
+    description: GitHub ID for the attestation.
+    value: ${{ steps.generate-attestation.outputs.attestation-id }}
+  attestation-url:
+    description: URL for the attestation summary.
+    value: ${{ steps.generate-attestation.outputs.attestation-url }}
+  zip-url:
+    description: URL where the plugin zip file is hosted.
+    value: ${{ steps.fetch-zip.outputs.zip-url }}
+  zip-sha-256:
+    description: SHA-256 hash of the downloaded plugin zip file.
+    value: ${{ steps.fetch-zip.outputs.zip-sha-256 }}
+
+runs:
+  using: composite
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    # This fetches the zipped plugin from the plugin directory. The zip might not exist yet if the plugin uses release confirmation
+    # and the release hasn't been confirmed. This will retry until the zip is available or the timeout is reached.
+    - name: Fetch zip from the plugin directory
+      id: fetch-zip
+      env:
+        PLUGIN: ${{ inputs.plugin }}
+        VERSION: ${{ inputs.version }}
+        ZIP_URL: ${{ inputs.zip-url }}
+        TIMEOUT: ${{ inputs.timeout }}
+      run: | #shell
+        zipurl="$ZIP_URL"
+        zipurl="${zipurl//%plugin%/"$PLUGIN"}"
+        zipurl="${zipurl//%version%/"$VERSION"}"
+        zipurl="$(printf '%s' "$zipurl" | tr -d '\n\r')"
+
+        plugin_host="$(printf '%s' "$zipurl" | awk -F/ '{print $3}')"
+        plugin_host="$(printf '%s' "$plugin_host" | tr -d '\n\r')"
+        echo PLUGIN_HOST="$plugin_host" >> "$GITHUB_ENV"
+        echo zip-url="$zipurl" >> "$GITHUB_OUTPUT"
+
+        if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then
+          echo "Error: timeout must be a non-negative integer number of minutes."
+          exit 1
+        fi
+
+        echo "Fetching plugin zip from $zipurl ..."
+        attempts=0
+        sleep=10
+        per_minute=$((60 / sleep))
+        max_attempts=$(( 10#$TIMEOUT * per_minute ))
+
+        # The zip can return a 200 before every server behind the download host can serve it, so a download only
+        # counts once it's a valid zip.
+        while true; do
+          attempts=$((attempts + 1))
+          status_code=$(curl --silent --location --output "${PLUGIN}.zip" --write-out "%{http_code}" "$zipurl" || true)
+
+          if [ "$status_code" = "200" ] && unzip -tq "${PLUGIN}.zip" > /dev/null 2>&1; then
+            break
+          fi
+
+          if [ "$status_code" = "200" ]; then
+            echo "Downloaded file is not a valid zip ($(wc -c < "${PLUGIN}.zip") bytes)."
+          else
+            echo "Plugin zip not available yet (HTTP status $status_code)."
+          fi
+
+          if [ $attempts -ge $max_attempts ]; then
+            echo "Error: ${TIMEOUT} minute timeout reached. Plugin zip not available."
+            exit 1
+          fi
+
+          echo "Retrying in $sleep seconds..."
+          sleep $sleep
+        done
+
+        sha256=$(sha256sum "${PLUGIN}.zip" | cut -d' ' -f1)
+        echo "zip-sha-256=$sha256" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    # Now compare the contents of the generated zip and the plugin directory zip to ensure they match.
+    # Only then should an attestation for the plugin directory zip be generated.
+    - name: Unzip the zip from the plugin directory
+      env:
+        PLUGIN: ${{ inputs.plugin }}
+      run: | #shell
+        unzip -q -d zip-deployed "${PLUGIN}.zip"
+      shell: bash
+
+    - name: Unzip the generated zip
+      env:
+        ZIP_PATH: ${{ inputs.zip-path }}
+      run: | #shell
+        unzip -q -d zip-generated "${ZIP_PATH}"
+      shell: bash
+
+    - name: Ensure the contents are identical
+      run: | #shell
+        diff --recursive zip-generated zip-deployed
+      shell: bash
+
+    - name: Upload the zip from the plugin directory for debugging
+      if: ${{ failure() }}
+      uses: chainguard-actions/actions-upload-artifact@dc8d35a3347d79eda9033e7af73f508094dd41b5 # v7.0.1
+      with:
+        name: ${{ inputs.plugin }}-${{ inputs.version }}-plugin-directory-zip
+        path: ${{ github.workspace }}/${{ inputs.plugin }}.zip
+        if-no-files-found: ignore
+
+    - name: Generate attestation for the zip
+      if: ${{ inputs.dry-run == 'false' }}
+      id: generate-attestation
+      uses: chainguard-actions/actions-attest@d290773026c08986db4ae50e50d962006f429d8c # v4.1.0
+      env:
+        PLUGIN: ${{ inputs.plugin }}
+        VERSION: ${{ inputs.version }}
+      with:
+        subject-path: "${{ github.workspace }}/${{ env.PLUGIN }}.zip"
+        subject-name: "${{ env.PLUGIN_HOST }}-${{ env.PLUGIN }}-${{ env.VERSION }}"
+
+    - name: Verify the attestation
+      if: ${{ inputs.dry-run == 'false' }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PLUGIN: ${{ inputs.plugin }}
+      run: | #shell
+        gh attestation verify "${PLUGIN}.zip" --owner "${GITHUB_REPOSITORY_OWNER}"
+      shell: bash

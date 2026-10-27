@@ -1,0 +1,53 @@
+name: Test custom zip-url without placeholders
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Build plugin zip and serve it locally at a fixed path
+        run: |
+          set -e
+          mkdir -p /tmp/serve-custom/releases /tmp/build
+          python3 - <<'EOF'
+          import zipfile
+          with zipfile.ZipFile('/tmp/build/other.zip', 'w') as z:
+              z.writestr('other/other.php', "<?php\n/* Plugin Name: Other */\n")
+              z.writestr('other/inc/helper.php', "<?php\n// helper\n")
+          EOF
+          cp /tmp/build/other.zip /tmp/serve-custom/releases/latest.zip
+          sha256sum /tmp/build/other.zip | cut -d' ' -f1 > /tmp/expected-sha
+          cd /tmp/serve-custom
+          setsid nohup python3 -m http.server 8768 --bind 127.0.0.1 > /tmp/http.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:8768/releases/latest.zip; then echo "server up"; exit 0; fi
+            sleep 1
+          done
+          echo "server failed to start"; cat /tmp/http.log; exit 1
+      - id: action
+        uses: .
+        with:
+          zip-path: /tmp/build/other.zip
+          plugin: other
+          version: 3.1.0
+          zip-url: 'http://127.0.0.1:8768/releases/latest.zip'
+          timeout: 1
+          dry-run: true
+      - name: Assert outputs
+        env:
+          ZIP_URL: ${{ steps.action.outputs.zip-url }}
+          SHA: ${{ steps.action.outputs.zip-sha-256 }}
+        run: |
+          echo "zip-url: $ZIP_URL"
+          echo "sha: $SHA"
+          if [ "$ZIP_URL" != "http://127.0.0.1:8768/releases/latest.zip" ]; then
+            echo "FAIL: zip-url should be passed through unchanged"; exit 1
+          fi
+          if [ "$SHA" != "$(cat /tmp/expected-sha)" ]; then
+            echo "FAIL: sha mismatch"; exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/other.zip" ]; then
+            echo "FAIL: expected download saved as other.zip"; exit 1
+          fi
+          echo "PASS"

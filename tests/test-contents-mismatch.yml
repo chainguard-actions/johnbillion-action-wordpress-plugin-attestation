@@ -1,0 +1,48 @@
+name: Test contents mismatch fails
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Build differing zips and serve deployed one locally
+        run: |
+          set -e
+          mkdir -p /tmp/serve /tmp/build
+          python3 - <<'EOF'
+          import zipfile
+          with zipfile.ZipFile('/tmp/build/my-plugin.zip', 'w') as z:
+              z.writestr('my-plugin/my-plugin.php', "<?php\n/* Plugin Name: My Plugin (local) */\n")
+          with zipfile.ZipFile('/tmp/serve/my-plugin.2.0.0.zip', 'w') as z:
+              z.writestr('my-plugin/my-plugin.php', "<?php\n/* Plugin Name: My Plugin (tampered) */\n")
+          EOF
+          cd /tmp/serve
+          setsid nohup python3 -m http.server 8766 --bind 127.0.0.1 > /tmp/http.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:8766/my-plugin.2.0.0.zip; then echo "server up"; exit 0; fi
+            sleep 1
+          done
+          echo "server failed to start"; cat /tmp/http.log; exit 1
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          zip-path: /tmp/build/my-plugin.zip
+          plugin: my-plugin
+          version: 2.0.0
+          zip-url: 'http://127.0.0.1:8766/%plugin%.%version%.zip'
+          timeout: 1
+          dry-run: true
+      - name: Assert action failed due to mismatch
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "FAIL: expected failure when zip contents differ"; exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/zip-deployed/my-plugin/my-plugin.php" ] || [ ! -f "$GITHUB_WORKSPACE/zip-generated/my-plugin/my-plugin.php" ]; then
+            echo "FAIL: expected both zips to be extracted before the diff failed"; exit 1
+          fi
+          echo "PASS"

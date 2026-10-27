@@ -1,0 +1,62 @@
+name: Test basic dry-run with matching zip
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Build plugin zip and serve it locally
+        run: |
+          set -e
+          mkdir -p /tmp/serve /tmp/build
+          python3 - <<'EOF'
+          import zipfile
+          with zipfile.ZipFile('/tmp/build/my-plugin.zip', 'w') as z:
+              z.writestr('my-plugin/my-plugin.php', "<?php\n/* Plugin Name: My Plugin */\n")
+              z.writestr('my-plugin/readme.txt', "=== My Plugin ===\nStable tag: 1.2.3\n")
+          EOF
+          cp /tmp/build/my-plugin.zip /tmp/serve/my-plugin.1.2.3.zip
+          sha256sum /tmp/build/my-plugin.zip | cut -d' ' -f1 > /tmp/expected-sha
+          cd /tmp/serve
+          setsid nohup python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/http.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:8765/my-plugin.1.2.3.zip; then echo "server up"; exit 0; fi
+            sleep 1
+          done
+          echo "server failed to start"; cat /tmp/http.log; exit 1
+      - id: action
+        uses: .
+        with:
+          zip-path: /tmp/build/my-plugin.zip
+          plugin: my-plugin
+          version: 1.2.3
+          zip-url: 'http://127.0.0.1:8765/%plugin%.%version%.zip'
+          timeout: 1
+          dry-run: true
+      - name: Assert outputs
+        env:
+          ZIP_URL: ${{ steps.action.outputs.zip-url }}
+          SHA: ${{ steps.action.outputs.zip-sha-256 }}
+          BUNDLE: ${{ steps.action.outputs.bundle-path }}
+        run: |
+          echo "zip-url: $ZIP_URL"
+          echo "sha: $SHA"
+          echo "bundle-path: $BUNDLE"
+          EXPECTED_SHA="$(cat /tmp/expected-sha)"
+          if [ "$ZIP_URL" != "http://127.0.0.1:8765/my-plugin.1.2.3.zip" ]; then
+            echo "FAIL: unexpected zip-url"; exit 1
+          fi
+          if [ "$SHA" != "$EXPECTED_SHA" ]; then
+            echo "FAIL: expected sha $EXPECTED_SHA"; exit 1
+          fi
+          if [ -n "$BUNDLE" ]; then
+            echo "FAIL: dry-run should not produce an attestation bundle"; exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/my-plugin.zip" ]; then
+            echo "FAIL: downloaded zip not found in workspace"; exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/zip-deployed/my-plugin/my-plugin.php" ]; then
+            echo "FAIL: deployed zip not extracted"; exit 1
+          fi
+          echo "PASS"

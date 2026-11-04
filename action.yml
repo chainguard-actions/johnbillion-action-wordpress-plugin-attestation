@@ -155,7 +155,7 @@ runs:
 
     - name: Upload the zip from the plugin directory for debugging
       if: ${{ failure() }}
-      uses: chainguard-actions/actions-upload-artifact@dc8d35a3347d79eda9033e7af73f508094dd41b5 # v7.0.1
+      uses: chainguard-actions/actions-upload-artifact@7d21b863ba4fc97f698d6c451875ee6cf043953a # v7.0.1
       with:
         name: ${{ inputs.plugin }}-${{ inputs.version }}-plugin-directory-zip
         path: ${{ github.workspace }}/${{ inputs.plugin }}.zip
